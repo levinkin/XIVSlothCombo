@@ -195,7 +195,7 @@ namespace XIVSlothCombo.Combos.PvE
 
                     if (CanSpellWeave(actionID) && IsEnabled(CustomComboPreset.SAM_TrueNorth) && TargetNeedsPositionals() && GetBuffStacks(Buffs.MeikyoShisui) > 0 && !HasEffect(All.Buffs.TrueNorth) && GetRemainingCharges(All.TrueNorth) > 0 && All.TrueNorth.LevelChecked())
                     {
-                        if (IsEnabled(CustomComboPreset.SAM_TrueNorth_Opener))
+                        if (!IsEnabled(CustomComboPreset.SAM_TrueNorth_Opener))
                         {
                             if (!inOpener)
                             {
@@ -514,7 +514,7 @@ namespace XIVSlothCombo.Combos.PvE
 
                                         if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_CDs_MeikyoShisui_Burst))
                                         {
-                                            if (nonOpener || GetRemainingCharges(MeikyoShisui) == 2 || (gauge.Kaeshi == Kaeshi.NONE && gauge.Sen == Sen.NONE && morbingTime))
+                                            if (hasDied || nonOpener || GetRemainingCharges(MeikyoShisui) == 2 || (gauge.Kaeshi == Kaeshi.NONE && gauge.Sen == Sen.NONE && GetDebuffRemainingTime(Debuffs.Higanbana) <= 15))
                                                 return MeikyoShisui;
                                         }
                                     }
