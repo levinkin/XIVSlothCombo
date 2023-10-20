@@ -2849,6 +2849,11 @@ namespace XIVSlothCombo.Combos
         [CustomComboInfo("Samurai Overcap Feature", "Adds Shinten onto main combo when Kenki is at the selected amount or more", SAM.JobID, 0, "", "")]
         SAM_ST_Overcap = 15001,
 
+        [ParentCombo(SAM_ST_Overcap)]
+        [ReplaceSkill(SAM.Kasha, SAM.Gekko, SAM.Yukikaze)]
+        [CustomComboInfo("Ikishoten Overcap Feature", "Dumps Kenki when Ikishoten is about to go off cd and would overcap when used", SAM.JobID, 0, "", "")]
+        SAM_ST_Overcap_Dump = 15050,
+
         [ReplaceSkill(SAM.Mangetsu, SAM.Oka)]
         [CustomComboInfo("Samurai AoE Overcap Feature", "Adds Kyuten onto main AoE combos when Kenki is at the selected amount or more", SAM.JobID, 0, "", "")]
         SAM_AoE_Overcap = 15002,
@@ -3053,6 +3058,11 @@ namespace XIVSlothCombo.Combos
         [CustomComboInfo("True North Feature", "Adds True North on all single target combos if Meikyo Shisui's buff is on you.", SAM.JobID, 0, "", "")]
         SAM_TrueNorth = 15038,
 
+        [ParentCombo(SAM_TrueNorth)]
+        [ReplaceSkill(SAM.Gekko, SAM.Yukikaze, SAM.Kasha)]
+        [CustomComboInfo("Opener True North Feature", "Adds True North to all Meikyo Shisui buff windows in opener (Will use up all True North stacks by the end of opener).", SAM.JobID, 0, "", "")]
+        SAM_TrueNorth_Opener = 15049,
+
         [ParentCombo(SAM_ST_GekkoCombo)]
         [CustomComboInfo("Combo Heals Option", "Adds Bloodbath and Second Wind to the combo, using them when below the HP Percentage threshold.", SAM.JobID, 0, "", "")]
         SAM_ST_ComboHeals = 15043,
@@ -3072,7 +3082,7 @@ namespace XIVSlothCombo.Combos
         SAM_Variant_Rampart = 15048,
         #endregion
 
-        // Last value = 15048
+        // Last value = 15049
 
         #endregion
 

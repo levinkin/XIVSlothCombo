@@ -33,6 +33,7 @@ namespace XIVSlothCombo.Combos.PvE
             Higanbana = 7489,
             TenkaGoken = 7488,
             Setsugekka = 7487,
+            KaeshiSetsugekka = 16486,
             Shinten = 7490,
             Kyuten = 7491,
             Hagakure = 7495,
@@ -132,6 +133,7 @@ namespace XIVSlothCombo.Combos.PvE
             internal static bool hasDied = false;
             internal static bool fillerComplete = false;
             internal static bool fastFillerReady = false;
+            internal static bool morbingTime = false;
 
             protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
             {
@@ -188,11 +190,37 @@ namespace XIVSlothCombo.Combos.PvE
                         }
                     }
 
-                    if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_RangedUptime) && Enpi.LevelChecked() && !inEvenFiller && !inOddFiller && !InMeleeRange() && HasBattleTarget())
+                    if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_RangedUptime) && Enpi.LevelChecked() && !inEvenFiller && !inOddFiller && !InMeleeRange() && HasBattleTarget() && !inOpener)
                         return Enpi;
 
                     if (CanSpellWeave(actionID) && IsEnabled(CustomComboPreset.SAM_TrueNorth) && TargetNeedsPositionals() && GetBuffStacks(Buffs.MeikyoShisui) > 0 && !HasEffect(All.Buffs.TrueNorth) && GetRemainingCharges(All.TrueNorth) > 0 && All.TrueNorth.LevelChecked())
-                        return All.TrueNorth;
+                    {
+                        if (IsEnabled(CustomComboPreset.SAM_TrueNorth_Opener))
+                        {
+                            if (!inOpener)
+                            {
+                                if ((!OnTargetsFlank() && (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && ((!gauge.Sen.HasFlag(Sen.KA) && HasEffect(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka)))))
+                                {
+                                    return All.TrueNorth;
+                                }
+                                else if ((!OnTargetsRear() && (!HasEffect(Buffs.Fugetsu) || (!gauge.Sen.HasFlag(Sen.GETSU) && HasEffect(Buffs.Fuka)))))
+                                {
+                                    return All.TrueNorth;
+                                }
+                            }
+                        }
+                        else {
+                            if ((!OnTargetsFlank() && (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && ((!gauge.Sen.HasFlag(Sen.KA) && HasEffect(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka)))))
+                            {
+                                return All.TrueNorth;
+                            }
+                            else if ((!OnTargetsRear() && (!HasEffect(Buffs.Fugetsu) || (!gauge.Sen.HasFlag(Sen.GETSU) && HasEffect(Buffs.Fuka)))))
+                            {
+                                return All.TrueNorth;
+                            }
+                        }
+                    }
+
 
                     if (InCombat())
                     {
@@ -253,6 +281,7 @@ namespace XIVSlothCombo.Combos.PvE
 
                             if (gauge.Kaeshi == Kaeshi.SETSUGEKKA || gauge.Kaeshi == Kaeshi.GOKEN)
                                 return OriginalHook(TsubameGaeshi);
+                                
 
                             //1-2-3 Logic
                             if (lastComboMove == Hakaze)
@@ -262,10 +291,14 @@ namespace XIVSlothCombo.Combos.PvE
                                 return Hakaze;
 
                             if (meikyostacks == 3)
+                            {
                                 return Gekko;
+                            }
 
                             if (meikyostacks == 2 && !HasEffect(Buffs.OgiNamikiriReady) && gauge.Kaeshi == Kaeshi.NONE)
+                            {
                                 return Kasha;
+                            }
 
                             if (meikyostacks == 1)
                             {
@@ -273,7 +306,16 @@ namespace XIVSlothCombo.Combos.PvE
                                     return Yukikaze;
 
                                 if (gauge.MeditationStacks == 0 || !HasEffect(Buffs.OgiNamikiriReady))
-                                    return Gekko;
+                                {
+                                    if (!gauge.Sen.HasFlag(Sen.GETSU))
+                                    {
+                                        return Gekko;
+                                    }
+                                    else
+                                    {
+                                        return Kasha;
+                                    }
+                                }
                             }
 
                             if (GetRemainingCharges(TsubameGaeshi) == 0)
@@ -288,6 +330,10 @@ namespace XIVSlothCombo.Combos.PvE
 
                         if (!inOpener)
                         {
+                            if (WasLastAction(KaeshiSetsugekka))
+                            {
+                                morbingTime = true;
+                            }
                             if (IsEnabled(CustomComboPreset.SAM_Variant_Cure) && IsEnabled(Variant.VariantCure) && PlayerHealthPercentageHp() <= GetOptionValue(Config.SAM_VariantCure))
                                 return Variant.VariantCure;
 
@@ -468,7 +514,7 @@ namespace XIVSlothCombo.Combos.PvE
 
                                         if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_CDs_MeikyoShisui_Burst))
                                         {
-                                            if (hasDied || nonOpener || GetRemainingCharges(MeikyoShisui) == 2 || (gauge.Kaeshi == Kaeshi.NONE && gauge.Sen == Sen.NONE && GetDebuffRemainingTime(Debuffs.Higanbana) <= 15))
+                                            if (nonOpener || GetRemainingCharges(MeikyoShisui) == 2 || (gauge.Kaeshi == Kaeshi.NONE && gauge.Sen == Sen.NONE && morbingTime))
                                                 return MeikyoShisui;
                                         }
                                     }
@@ -486,7 +532,7 @@ namespace XIVSlothCombo.Combos.PvE
 
                                             if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_CDs_Senei_Burst))
                                             {
-                                                if (hasDied || nonOpener || GetCooldownRemainingTime(Ikishoten) <= 100 || ((gauge.Kaeshi == Kaeshi.SETSUGEKKA || gauge.Sen == Sen.NONE) && GetDebuffRemainingTime(Debuffs.Higanbana) <= 10))
+                                                if (nonOpener || GetCooldownRemainingTime(Ikishoten) <= 100 || ((gauge.Kaeshi == Kaeshi.SETSUGEKKA || gauge.Sen == Sen.NONE) && WasLastAction(Setsugekka)))
                                                     return Senei;
                                             }
                                         }
@@ -504,9 +550,15 @@ namespace XIVSlothCombo.Combos.PvE
                                         //Dumps Kenki in preparation for Ikishoten
                                         if (gauge.Kenki > 50 && GetCooldownRemainingTime(Ikishoten) < 10)
                                             return Shinten;
-
                                         if (gauge.Kenki <= 50 && IsOffCooldown(Ikishoten))
                                             return Ikishoten;
+                                    }
+
+                                    if (IsEnabled(CustomComboPreset.SAM_ST_Overcap_Dump) && Ikishoten.LevelChecked())
+                                    {
+                                        //Dumps Kenki in preparation for Ikishoten
+                                        if (gauge.Kenki > 50 && GetCooldownRemainingTime(Ikishoten) < 10)
+                                            return Shinten;
                                     }
 
                                     if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_CDs_Shoha) && Shoha.LevelChecked() && gauge.MeditationStacks == 3)
@@ -516,8 +568,9 @@ namespace XIVSlothCombo.Combos.PvE
                                 // Iaijutsu Features
                                 if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_CDs_Iaijutsu) && Higanbana.LevelChecked())
                                 {
-                                    if (gauge.Kaeshi == Kaeshi.SETSUGEKKA && TsubameGaeshi.LevelChecked() && GetRemainingCharges(TsubameGaeshi) > 0)
+                                    if (gauge.Kaeshi == Kaeshi.SETSUGEKKA && TsubameGaeshi.LevelChecked() && GetRemainingCharges(TsubameGaeshi) > 0) {
                                         return OriginalHook(TsubameGaeshi);
+                                    }
 
                                     if (!IsMoving)
                                     {
@@ -559,14 +612,28 @@ namespace XIVSlothCombo.Combos.PvE
                     {
                         if (HasEffect(Buffs.MeikyoShisui))
                         {
-                            if (!HasEffect(Buffs.Fugetsu) || (!gauge.Sen.HasFlag(Sen.GETSU) && HasEffect(Buffs.Fuka)))
-                                return Gekko;
+                            if (OnTargetsFlank() && TargetNeedsPositionals())
+                            {
+                                if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && ((!gauge.Sen.HasFlag(Sen.KA) && HasEffect(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka)))
+                                    return Kasha;
 
-                            if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && ((!gauge.Sen.HasFlag(Sen.KA) && HasEffect(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka)))
-                                return Kasha;
+                                if (!HasEffect(Buffs.Fugetsu) || (!gauge.Sen.HasFlag(Sen.GETSU) && HasEffect(Buffs.Fuka)))
+                                    return Gekko;
 
-                            if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Yukikaze) && !gauge.Sen.HasFlag(Sen.SETSU))
-                                return Yukikaze;
+                                if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Yukikaze) && !gauge.Sen.HasFlag(Sen.SETSU))
+                                    return Yukikaze;
+                            }
+                            else
+                            {
+                                if (!HasEffect(Buffs.Fugetsu) || (!gauge.Sen.HasFlag(Sen.GETSU) && HasEffect(Buffs.Fuka)))
+                                    return Gekko;
+
+                                if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && ((!gauge.Sen.HasFlag(Sen.KA) && HasEffect(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka)))
+                                    return Kasha;
+
+                                if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Yukikaze) && !gauge.Sen.HasFlag(Sen.SETSU))
+                                    return Yukikaze;
+                            }
                         }
 
                         if (comboTime > 0)
@@ -575,15 +642,28 @@ namespace XIVSlothCombo.Combos.PvE
                             {
                                 if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Yukikaze) && !gauge.Sen.HasFlag(Sen.SETSU) && Yukikaze.LevelChecked() && HasEffect(Buffs.Fugetsu) && HasEffect(Buffs.Fuka))
                                     return Yukikaze;
+                                if (OnTargetsFlank() && TargetNeedsPositionals())
+                                {
+                                    if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && LevelChecked(Shifu) &&
+                                        ((!Kasha.LevelChecked() && ((GetBuffRemainingTime(Buffs.Fuka) < GetBuffRemainingTime(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka))) ||
+                                        (Kasha.LevelChecked() && (!HasEffect(Buffs.Fuka) || (HasEffect(Buffs.Fugetsu) && !gauge.Sen.HasFlag(Sen.KA)) || (threeSeal && (GetBuffRemainingTime(Buffs.Fuka) < GetBuffRemainingTime(Buffs.Fugetsu)))))))
+                                        return Shifu;
 
-                                if ((!Kasha.LevelChecked() && ((GetBuffRemainingTime(Buffs.Fugetsu) < GetBuffRemainingTime(Buffs.Fuka)) || !HasEffect(Buffs.Fugetsu))) ||
+                                    if ((!Kasha.LevelChecked() && ((GetBuffRemainingTime(Buffs.Fugetsu) < GetBuffRemainingTime(Buffs.Fuka)) || !HasEffect(Buffs.Fugetsu))) ||
                                    (Kasha.LevelChecked() && (!HasEffect(Buffs.Fugetsu) || (HasEffect(Buffs.Fuka) && !gauge.Sen.HasFlag(Sen.GETSU)) || (threeSeal && (GetBuffRemainingTime(Buffs.Fugetsu) < GetBuffRemainingTime(Buffs.Fuka))))))
-                                    return Jinpu;
+                                        return Jinpu;
+                                }
+                                else
+                                {
+                                    if ((!Kasha.LevelChecked() && ((GetBuffRemainingTime(Buffs.Fugetsu) < GetBuffRemainingTime(Buffs.Fuka)) || !HasEffect(Buffs.Fugetsu))) ||
+                                   (Kasha.LevelChecked() && (!HasEffect(Buffs.Fugetsu) || (HasEffect(Buffs.Fuka) && !gauge.Sen.HasFlag(Sen.GETSU)) || (threeSeal && (GetBuffRemainingTime(Buffs.Fugetsu) < GetBuffRemainingTime(Buffs.Fuka))))))
+                                        return Jinpu;
 
-                                if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && LevelChecked(Shifu) &&
-                                    ((!Kasha.LevelChecked() && ((GetBuffRemainingTime(Buffs.Fuka) < GetBuffRemainingTime(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka))) ||
-                                    (Kasha.LevelChecked() && (!HasEffect(Buffs.Fuka) || (HasEffect(Buffs.Fugetsu) && !gauge.Sen.HasFlag(Sen.KA)) || (threeSeal && (GetBuffRemainingTime(Buffs.Fuka) < GetBuffRemainingTime(Buffs.Fugetsu)))))))
-                                    return Shifu;
+                                    if (IsEnabled(CustomComboPreset.SAM_ST_GekkoCombo_Kasha) && LevelChecked(Shifu) &&
+                                        ((!Kasha.LevelChecked() && ((GetBuffRemainingTime(Buffs.Fuka) < GetBuffRemainingTime(Buffs.Fugetsu)) || !HasEffect(Buffs.Fuka))) ||
+                                        (Kasha.LevelChecked() && (!HasEffect(Buffs.Fuka) || (HasEffect(Buffs.Fugetsu) && !gauge.Sen.HasFlag(Sen.KA)) || (threeSeal && (GetBuffRemainingTime(Buffs.Fuka) < GetBuffRemainingTime(Buffs.Fugetsu)))))))
+                                        return Shifu;
+                                }
                             }
 
                             if (lastComboMove == Jinpu && Gekko.LevelChecked())
@@ -845,14 +925,29 @@ namespace XIVSlothCombo.Combos.PvE
                 {
                     if (HasEffect(Buffs.MeikyoShisui))
                     {
-                        if (!HasEffect(Buffs.Fugetsu) || gauge.Sen.HasFlag(Sen.GETSU) == false)
-                            return Gekko;
+                        if (OnTargetsFlank() && TargetNeedsPositionals())
+                        {
+                            if (!HasEffect(Buffs.Fuka) || gauge.Sen.HasFlag(Sen.KA) == false)
+                                return Kasha;
 
-                        if (!HasEffect(Buffs.Fuka) || gauge.Sen.HasFlag(Sen.KA) == false)
-                            return Kasha;
+                            if (!HasEffect(Buffs.Fugetsu) || gauge.Sen.HasFlag(Sen.GETSU) == false)
+                                return Gekko;
 
-                        if (gauge.Sen.HasFlag(Sen.SETSU) == false)
-                            return Yukikaze;
+                            if (gauge.Sen.HasFlag(Sen.SETSU) == false)
+                                return Yukikaze;
+                        }
+                        else
+                        {
+                            if (!HasEffect(Buffs.Fugetsu) || gauge.Sen.HasFlag(Sen.GETSU) == false)
+                                return Gekko;
+
+                            if (!HasEffect(Buffs.Fuka) || gauge.Sen.HasFlag(Sen.KA) == false)
+                                return Kasha;
+
+                            if (gauge.Sen.HasFlag(Sen.SETSU) == false)
+                                return Yukikaze;
+                        }
+
                     }
 
                     return MeikyoShisui;
