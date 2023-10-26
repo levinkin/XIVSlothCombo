@@ -503,7 +503,7 @@ namespace XIVSlothCombo.Combos.PvE
                                     // 3. During Brotherhood.
                                     // 4. During Riddle of Fire after Demolish has been applied.
                                     // 5. Prepare Masterful Blitz for the Riddle of Fire & Brotherhood window.
-                                    if ((lastComboMove == Bootshine || lastComboMove == DragonKick) &&
+                                    if ((lastComboMove == Bootshine || lastComboMove == DragonKick) && HasEffect(Buffs.RaptorForm) &&
                                         ((GetRemainingCharges(PerfectBalance) == 2) ||
                                         (GetRemainingCharges(PerfectBalance) == 1 && GetCooldownChargeRemainingTime(PerfectBalance) < 4) ||
                                         (GetRemainingCharges(PerfectBalance) >= 1 && HasEffect(Buffs.Brotherhood)) ||
