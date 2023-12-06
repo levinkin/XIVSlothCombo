@@ -2338,8 +2338,12 @@ namespace XIVSlothCombo.Combos
         RPR_ST_SliceCombo_ComboHeals = 12006,
 
         [ParentCombo(RPR_ST_SliceCombo)]
-        [CustomComboInfo("Ranged Filler Option", "Replaces the combo chain with Harpe (or Harvest Moon, if available) when outside of melee range. Will not override Communio.", RPR.JobID)]
+        [CustomComboInfo("Ranged Filler Option", "Replaces the combo chain with Harpe when outside of melee range. Will not override Communio.", RPR.JobID, 0, "", "")]
         RPR_ST_SliceCombo_RangedFiller = 12007,
+
+        [ParentCombo(RPR_ST_SliceCombo_RangedFiller)]
+        [CustomComboInfo("Use Harvest Moon When Ranged Option", "Uses Harvest Moon over Harpe when avaliable when outside of melee range. Will not override Communio.", RPR.JobID, 0, "", "")]
+        RPR_ST_SliceCombo_HarvestMoonRangedFiller = 12069,
 
         [ParentCombo(RPR_ST_SliceCombo)]
         [CustomComboInfo("Enshroud Option", "Adds Enshroud to the combo when at 50 Shroud or greater and when current target is afflicted with Death's Design.", RPR.JobID)]
@@ -2523,7 +2527,7 @@ namespace XIVSlothCombo.Combos
         RPR_Variant_Rampart = 12068,
         #endregion
 
-        // Last value = 12068
+        // Last value = 12069
 
         #endregion
 
@@ -2897,6 +2901,11 @@ namespace XIVSlothCombo.Combos
         [CustomComboInfo("Samurai Overcap Feature", "Adds Shinten onto main combo when Kenki is at the selected amount or more", SAM.JobID)]
         SAM_ST_Overcap = 15001,
 
+        [ParentCombo(SAM_ST_Overcap)]
+        [ReplaceSkill(SAM.Kasha, SAM.Gekko, SAM.Yukikaze)]
+        [CustomComboInfo("Ikishoten Overcap Feature", "Dumps Kenki when Ikishoten is about to go off cd and would overcap when used", SAM.JobID, 0, "", "")]
+        SAM_ST_Overcap_Dump = 15050,
+
         [ReplaceSkill(SAM.Mangetsu, SAM.Oka)]
         [CustomComboInfo("Samurai AoE Overcap Feature", "Adds Kyuten onto main AoE combos when Kenki is at the selected amount or more", SAM.JobID)]
         SAM_AoE_Overcap = 15002,
@@ -3101,6 +3110,11 @@ namespace XIVSlothCombo.Combos
         [CustomComboInfo("True North Feature", "Adds True North on all single target combos if Meikyo Shisui's buff is on you.", SAM.JobID)]
         SAM_TrueNorth = 15038,
 
+        [ParentCombo(SAM_TrueNorth)]
+        [ReplaceSkill(SAM.Gekko, SAM.Yukikaze, SAM.Kasha)]
+        [CustomComboInfo("Opener True North Feature", "Adds True North to all Meikyo Shisui buff windows in opener (Will use up all True North stacks by the end of opener).", SAM.JobID, 0, "", "")]
+        SAM_TrueNorth_Opener = 15049,
+
         [ParentCombo(SAM_ST_GekkoCombo)]
         [CustomComboInfo("Combo Heals Option", "Adds Bloodbath and Second Wind to the combo, using them when below the HP Percentage threshold.", SAM.JobID)]
         SAM_ST_ComboHeals = 15043,
@@ -3120,7 +3134,7 @@ namespace XIVSlothCombo.Combos
         SAM_Variant_Rampart = 15048,
         #endregion
 
-        // Last value = 15048
+        // Last value = 15049
 
         #endregion
 
