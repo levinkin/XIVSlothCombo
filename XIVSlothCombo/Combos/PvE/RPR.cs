@@ -352,8 +352,7 @@ namespace XIVSlothCombo.Combos.PvE
                             ActionReady(SoulSlice) && gauge.Soul <= 50 && !HasEffect(Buffs.PerfectioOcculta))
                             return SoulSlice;
 
-                        if (IsEnabled(CustomComboPreset.RPR_ST_Enshroud) &&
-                            HasEffect(Buffs.Enshrouded))
+                        if (HasEffect(Buffs.Enshrouded))
                         {
                             if (IsEnabled(CustomComboPreset.RPR_ST_Communio) &&
                                 gauge.LemureShroud is 1 && gauge.VoidShroud is 0 && ActionReady(Communio))
