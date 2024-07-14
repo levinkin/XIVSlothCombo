@@ -1,3 +1,4 @@
+using ECommons.DalamudServices;
 using Lumina.Excel.GeneratedSheets;
 using System;
 using System.Collections.Generic;
@@ -45,6 +46,27 @@ namespace XIVSlothCombo.Attributes
         /// <summary> Gets the job ID. </summary>
         public byte JobID { get; }
 
+        /// <summary> Gets the job role. </summary>
+        public int Role => JobIDToRole(JobID);
+
+        public uint ClassJobCategory => JobIDToClassJobCategory(JobID);
+
+        private int JobIDToRole(byte jobID)
+        {
+            if (Svc.Data.GetExcelSheet<ClassJob>().HasRow(jobID))
+                return Svc.Data.GetExcelSheet<ClassJob>().GetRow(jobID).Role;
+
+            return 0;
+        }
+
+        private uint JobIDToClassJobCategory(byte jobID)
+        {
+            if (Svc.Data.GetExcelSheet<ClassJob>().HasRow(jobID))
+                return Svc.Data.GetExcelSheet<ClassJob>().GetRow(jobID).ClassJobCategory.Row;
+
+            return 0;
+        }
+
         /// <summary> Gets the display order. </summary>
         public int Order { get; }
 
@@ -53,8 +75,14 @@ namespace XIVSlothCombo.Attributes
 
         public string JobShorthand => JobIDToShorthand(JobID);
 
-        private string JobIDToShorthand(byte key)
+        private static string JobIDToShorthand(byte key)
         {
+            if (key == 41)
+                return "VPR";
+
+            if (key == 0)
+                return "";
+
             if (ClassJobs.TryGetValue(key, out var job))
             {
                 return job.Abbreviation.RawString;
@@ -69,6 +97,9 @@ namespace XIVSlothCombo.Attributes
 
         public static string JobIDToName(byte key)
         {
+            if (key == 0)
+                return "General/Multiple Jobs";
+
             //Override DOH/DOL
             if (key is DOH.JobID) key = 08; //Set to Carpenter
             if (key is DOL.JobID) key = 16; //Set to Miner
@@ -79,9 +110,9 @@ namespace XIVSlothCombo.Attributes
                 //Job names are all lowercase by default. This capitalizes based on regional rules
                 string cultureID = Service.ClientState.ClientLanguage switch
                 {
-                    Dalamud.ClientLanguage.French => "fr-FR",
-                    Dalamud.ClientLanguage.Japanese => "ja-JP",
-                    Dalamud.ClientLanguage.German => "de-DE",
+                    Dalamud.Game.ClientLanguage.French => "fr-FR",
+                    Dalamud.Game.ClientLanguage.Japanese => "ja-JP",
+                    Dalamud.Game.ClientLanguage.German => "de-DE",
                     _ => "en-us",
                 };
                 TextInfo textInfo = new CultureInfo(cultureID, false).TextInfo;

@@ -1,12 +1,17 @@
 using Dalamud.Game.ClientState.JobGauge.Types;
+using ECommons.DalamudServices;
+using System;
+using System.Linq;
+using XIVSlothCombo.Combos.JobHelpers;
 using XIVSlothCombo.Combos.PvE.Content;
-using XIVSlothCombo.Core;
 using XIVSlothCombo.CustomComboNS;
+using XIVSlothCombo.CustomComboNS.Functions;
+using XIVSlothCombo.Data;
 using XIVSlothCombo.Extensions;
 
 namespace XIVSlothCombo.Combos.PvE
 {
-    internal static class MCH
+    internal class MCH
     {
         public const byte JobID = 31;
 
@@ -16,15 +21,15 @@ namespace XIVSlothCombo.Combos.PvE
             SplitShot = 2866,
             HeatedSplitShot = 7411,
             SlugShot = 2868,
+            HeatedSlugShot = 7412,
             GaussRound = 2874,
             Ricochet = 2890,
-            HeatedSlugshot = 7412,
+            Reassemble = 2876,
             Drill = 16498,
             HotShot = 2872,
-            Reassemble = 2876,
             AirAnchor = 16500,
             Hypercharge = 17209,
-            HeatBlast = 7410,
+            Heatblast = 7410,
             SpreadShot = 2870,
             Scattergun = 25786,
             AutoCrossbow = 16497,
@@ -33,216 +38,687 @@ namespace XIVSlothCombo.Combos.PvE
             AutomatonQueen = 16501,
             QueenOverdrive = 16502,
             Tactician = 16889,
-            ChainSaw = 25788,
+            Chainsaw = 25788,
             BioBlaster = 16499,
             BarrelStabilizer = 7414,
-            Wildfire = 2878;
+            Wildfire = 2878,
+            Dismantle = 2887,
+            Flamethrower = 7418,
+            BlazingShot = 36978,
+            DoubleCheck = 36979,
+            CheckMate = 36980,
+            Excavator = 36981,
+            FullMetalField = 36982;
 
         public static class Buffs
         {
             public const ushort
                 Reassembled = 851,
                 Tactician = 1951,
-                Wildfire = 1946;
+                Wildfire = 1946,
+                Overheated = 2688,
+                Flamethrower = 1205,
+                Hypercharged = 3864,
+                ExcavatorReady = 3865,
+                FullMetalMachinist = 3866;
         }
 
         public static class Debuffs
         {
-            // public const short placeholder = 0;
+            public const ushort
+            Dismantled = 2887,
+                Bioblaster = 1866;
         }
+
         public static class Config
         {
-            public const string
-                MCH_ST_SecondWindThreshold = "MCH_ST_SecondWindThreshold",
-                MCH_AoE_SecondWindThreshold = "MCH_AoE_SecondWindThreshold",
-                MCH_VariantCure = "MCH_VariantCure";
+            public static UserInt
+                MCH_ST_SecondWindThreshold = new("MCH_ST_SecondWindThreshold", 25),
+                MCH_AoE_SecondWindThreshold = new("MCH_AoE_SecondWindThreshold", 25),
+                MCH_VariantCure = new("MCH_VariantCure"),
+                MCH_ST_TurretUsage = new("MCH_ST_Adv_TurretGauge"),
+                MCH_AoE_TurretUsage = new("MCH_AoE_TurretUsage"),
+                MCH_ST_ReassemblePool = new("MCH_ST_ReassemblePool", 0),
+                MCH_AoE_ReassemblePool = new("MCH_AoE_ReassemblePool", 0),
+                MCH_ST_WildfireHP = new("MCH_ST_WildfireHP", 1),
+                MCH_ST_QueenOverDrive = new("MCH_ST_QueenOverDrive");
+            public static UserBoolArray
+                MCH_ST_Reassembled = new("MCH_ST_Reassembled"),
+                MCH_AoE_Reassembled = new("MCH_AoE_Reassembled");
+            public static UserBool
+                MCH_AoE_Hypercharge = new("MCH_AoE_Hypercharge");
         }
 
-        public static class Levels
+        internal class MCH_ST_SimpleMode : CustomCombo
         {
-            public const byte
-                SlugShot = 2,
-                Hotshot = 4,
-                GaussRound = 15,
-                CleanShot = 26,
-                Hypercharge = 30,
-                HeatBlast = 35,
-                RookOverdrive = 40,
-                Wildfire = 45,
-                Ricochet = 50,
-                Drill = 58,
-                AirAnchor = 76,
-                AutoCrossbow = 52,
-                HeatedSplitShot = 54,
-                Tactician = 56,
-                HeatedSlugshot = 60,
-                HeatedCleanShot = 64,
-                BioBlaster = 72,
-                ChargedActionMastery = 74,
-                QueenOverdrive = 80,
-                Scattergun = 82,
-                BarrelStabilizer = 66,
-                ChainSaw = 90;
-        }
-
-        internal class MCH_ST_MainCombo : CustomCombo
-        {
-            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_ST_MainCombo;
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_ST_SimpleMode;
+            internal static MCHOpenerLogic MCHOpener = new();
 
             protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
             {
-                if (actionID == CleanShot || actionID == HeatedCleanShot || actionID == SplitShot || actionID == HeatedSplitShot)
+                MCHGauge? gauge = GetJobGauge<MCHGauge>();
+                bool interruptReady = ActionReady(All.HeadGraze) && CanInterruptEnemy() && CanDelayedWeave(actionID);
+                double heatblastRC = 1.5;
+                bool drillCD = !ActionReady(Drill) || (ActionReady(Drill) && GetCooldownRemainingTime(Drill) > heatblastRC * 6);
+                bool anchorCD = !ActionReady(OriginalHook(AirAnchor)) || (ActionReady(OriginalHook(AirAnchor)) && GetCooldownRemainingTime(OriginalHook(AirAnchor)) > heatblastRC * 6);
+                bool sawCD = !ActionReady(Chainsaw) || (ActionReady(Chainsaw) && GetCooldownRemainingTime(Chainsaw) > heatblastRC * 6);
+                float GCD = GetCooldown(OriginalHook(SplitShot)).CooldownTotal;
+
+                if (actionID is SplitShot or HeatedSplitShot)
                 {
-                    var gauge = GetJobGauge<MCHGauge>();
-                    var drillCD = GetCooldown(Drill);
-                    var airAnchorCD = GetCooldown(AirAnchor);
-                    var hotshotCD = GetCooldown(HotShot);
-
-                    var gaussCD = GetCooldown(GaussRound);
-                    var ricochetCD = GetCooldown(Ricochet);
-                    var chainsawCD = GetCooldown(ChainSaw);
-
-                    var battery = GetJobGauge<MCHGauge>().Battery;
-                    var heat = GetJobGauge<MCHGauge>().Heat;
-                    var canWeave = CanWeave(actionID);
-
-                    if (IsEnabled(CustomComboPreset.MCH_Variant_Cure) && IsEnabled(Variant.VariantCure) && PlayerHealthPercentageHp() <= GetOptionValue(Config.MCH_VariantCure))
+                    if (IsEnabled(CustomComboPreset.MCH_Variant_Cure) &&
+                    IsEnabled(Variant.VariantCure) && PlayerHealthPercentageHp() <= Config.MCH_VariantCure)
                         return Variant.VariantCure;
 
                     if (IsEnabled(CustomComboPreset.MCH_Variant_Rampart) &&
                         IsEnabled(Variant.VariantRampart) &&
                         IsOffCooldown(Variant.VariantRampart) &&
-                        canWeave)
+                        CanWeave(actionID))
                         return Variant.VariantRampart;
 
-                    if (IsEnabled(CustomComboPreset.MCH_ST_BarrelStabilizer_DriftProtection))
+                    // Opener for MCH
+                    if (MCHOpener.DoFullOpener(ref actionID))
+                        return actionID;
+
+                    // Interrupt
+                    if (interruptReady)
+                        return All.HeadGraze;
+
+                    // Wildfire
+                    if (CanWeave(actionID) && ActionReady(Wildfire) && WasLastAction(Hypercharge))
+                        return Wildfire;
+
+                    // BarrelStabilizer use and Full metal field
+                    if (!gauge.IsOverheated && ((CanWeave(actionID) && ActionReady(BarrelStabilizer)) ||
+                        (HasEffect(Buffs.FullMetalMachinist) && WasLastWeaponskill(Excavator))))
+                        return OriginalHook(BarrelStabilizer);
+
+                    if (CanWeave(actionID) && (gauge.Heat >= 50 || HasEffect(Buffs.Hypercharged)) &&
+                        LevelChecked(Hypercharge) && !gauge.IsOverheated && !WasLastAction(BarrelStabilizer))
                     {
-                        if (level >= Levels.BarrelStabilizer && heat < 20 && canWeave && IsOffCooldown(BarrelStabilizer))
-                            return BarrelStabilizer;
+                        //Protection & ensures Hyper charged is double weaved with WF during reopener
+                        if (WasLastAction(FullMetalField) ||
+                            (!LevelChecked(FullMetalField) && ActionReady(Wildfire)) ||
+                            !LevelChecked(Wildfire))
+                            return Hypercharge;
+
+                        if (drillCD && anchorCD && sawCD &&
+                            ((GetCooldownRemainingTime(Wildfire) > GCD * 5 && LevelChecked(Wildfire)) || !LevelChecked(Wildfire)))
+                            return Hypercharge;
                     }
 
-                    if (IsEnabled(CustomComboPreset.MCH_ST_MainCombo_HeatBlast) && gauge.IsOverheated)
+                    //Queen
+                    if (UseQueen(gauge))
+                        return OriginalHook(RookAutoturret);
+
+                    //Heatblast, Gauss, Rico
+                    if (CanWeave(actionID) && WasLastAction(OriginalHook(Heatblast)) &&
+                        (ActionWatching.GetAttackType(ActionWatching.LastAction) != ActionWatching.ActionAttackType.Ability))
                     {
-                        if (CanWeave(actionID, 0.6))
-                        {
-                            if (level <= Levels.Ricochet && HasCharges(GaussRound))
-                                return GaussRound;
+                        if (ActionReady(OriginalHook(GaussRound)) && GetRemainingCharges(OriginalHook(GaussRound)) >= GetRemainingCharges(OriginalHook(Ricochet)))
+                            return OriginalHook(GaussRound);
 
-                            if (HasCharges(GaussRound) && gaussCD.CooldownRemaining < ricochetCD.CooldownRemaining)
-                                return GaussRound;
-                            else if (level >= Levels.Ricochet && HasCharges(Ricochet))
-                                return Ricochet;
-                        }
-
-                        if (level >= Levels.HeatBlast) // prioritize heatblast
-                            return HeatBlast;
+                        if (ActionReady(OriginalHook(Ricochet)) && GetRemainingCharges(OriginalHook(Ricochet)) > GetRemainingCharges(OriginalHook(GaussRound)))
+                            return OriginalHook(Ricochet);
                     }
 
-                    if (IsEnabled(CustomComboPreset.MCH_ST_MainCombo_Cooldowns))
+                    if (gauge.IsOverheated && LevelChecked(OriginalHook(Heatblast)))
+                        return OriginalHook(Heatblast);
+
+                    //gauss and ricochet outside HC
+                    if (CanWeave(actionID) && !gauge.IsOverheated &&
+                        (WasLastWeaponskill(OriginalHook(AirAnchor)) || WasLastWeaponskill(OriginalHook(Chainsaw)) || WasLastWeaponskill(Drill)))
                     {
-                        if (HasEffect(Buffs.Reassembled) && !airAnchorCD.IsCooldown && level >= Levels.AirAnchor)
-                            return AirAnchor;
-                        if (airAnchorCD.IsCooldown && !drillCD.IsCooldown && level >= Levels.Drill)
-                            return Drill;
-                        if (HasEffect(Buffs.Reassembled) && !chainsawCD.IsCooldown && level >= Levels.ChainSaw)
-                            return ChainSaw;
+                        if (ActionReady(OriginalHook(GaussRound)) && !WasLastAction(OriginalHook(GaussRound)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && !WasLastAction(OriginalHook(Ricochet)))
+                            return OriginalHook(Ricochet);
                     }
 
-                    if (IsEnabled(CustomComboPreset.MCH_ST_MainCombo_RicochetGaussCharges) && CanWeave(actionID, 0.6)) //0.6 instead of 0.7 to more easily fit opener. a
-                    {
-                        if (level >= Levels.Ricochet && HasCharges(Ricochet))
-                            return Ricochet;
-                        if (level >= Levels.GaussRound && HasCharges(GaussRound))
-                            return GaussRound;
+                    if (ReassembledTools(ref actionID, gauge))
+                        return actionID;
 
-                    }
-
-                    if (IsEnabled(CustomComboPreset.MCH_ST_MainCombo_RicochetGauss) && CanWeave(actionID, 0.6)) //0.6 instead of 0.7 to more easily fit opener. a
-                    {
-                        if (level >= Levels.Ricochet && GetRemainingCharges(Ricochet) > 1)
-                            return Ricochet;
-                        if (level >= Levels.GaussRound && GetRemainingCharges(GaussRound) > 1)
-                            return GaussRound;
-
-                    }
-
-                    if (IsEnabled(CustomComboPreset.MCH_ST_MainComboAlternate))
-                    {
-                        if (level >= Levels.AirAnchor && !airAnchorCD.IsCooldown && (HasEffect(Buffs.Reassembled) || !HasCharges(Reassemble)))
-                            return AirAnchor;
-                        if (level >= Levels.ChainSaw && !chainsawCD.IsCooldown && (GetCooldownChargeRemainingTime(Reassemble) >= 55 || !HasCharges(Reassemble)))
-                            return ChainSaw;
-                        if (level >= Levels.Drill && !drillCD.IsCooldown && (HasEffect(Buffs.Reassembled) || !HasCharges(Reassemble)))
-                            return Drill;
-                        if (level < Levels.AirAnchor && !hotshotCD.IsCooldown && (GetCooldownChargeRemainingTime(Reassemble) >= 55 || !HasCharges(Reassemble)))
-                            return HotShot;
-                    }
-
-                    if (IsEnabled(CustomComboPreset.MCH_ST_MainCombo_OverCharge) && canWeave)
-                    {
-                        if (battery == 100 && level is >= 40 and <= 79)
-                            return RookAutoturret;
-                        if (battery == 100 && level >= 80)
-                            return AutomatonQueen;
-                    }
-
+                    //1-2-3 Combo
                     if (comboTime > 0)
                     {
-                        if (lastComboMove == SplitShot && level >= Levels.SlugShot)
+                        if (lastComboMove is SplitShot && LevelChecked(OriginalHook(SlugShot)))
                             return OriginalHook(SlugShot);
 
-                        if (lastComboMove == SlugShot && level >= Levels.CleanShot)
+                        if (lastComboMove == OriginalHook(SlugShot) &&
+                            !LevelChecked(Drill) && !HasEffect(Buffs.Reassembled) && ActionReady(Reassemble))
+                            return Reassemble;
+
+                        if (lastComboMove is SlugShot && LevelChecked(OriginalHook(CleanShot)))
+                            return OriginalHook(CleanShot);
+                    }
+
+                    return OriginalHook(SplitShot);
+                }
+
+                return actionID;
+            }
+
+            private static bool ReassembledTools(ref uint actionID, MCHGauge gauge)
+            {
+                bool battery = Svc.Gauges.Get<MCHGauge>().Battery == 100;
+                // TOOLS!! Chainsaw Drill Air Anchor Excavator
+                if (!gauge.IsOverheated && !ActionWatching.WasLast2ActionsAbilities() &&
+                    !HasEffect(Buffs.Reassembled) && ActionReady(Reassemble) && (CanWeave(actionID) || !InCombat()) &&
+                    ((LevelChecked(AirAnchor) && ((GetCooldownRemainingTime(AirAnchor) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(AirAnchor)) && !battery) ||
+                    (LevelChecked(Drill) && ((GetCooldownRemainingTime(Drill) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Drill)) && !LevelChecked(AirAnchor)) ||
+                    (LevelChecked(Chainsaw) && ((GetCooldownRemainingTime(Chainsaw) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Chainsaw)) && !LevelChecked(Excavator) && !battery) ||
+                    (LevelChecked(Excavator) && HasEffect(Buffs.ExcavatorReady) && !battery)))
+                {
+                    actionID = Reassemble;
+                    return true;
+                }
+
+                if (LevelChecked(OriginalHook(Chainsaw)) &&
+                   !battery &&
+                   HasEffect(Buffs.ExcavatorReady))
+                {
+                    actionID = OriginalHook(Chainsaw);
+                    return true;
+                }
+
+                if (LevelChecked(Chainsaw) &&
+                    !battery &&
+                    ((GetCooldownRemainingTime(Chainsaw) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Chainsaw)))
+                {
+                    actionID = Chainsaw;
+                    return true;
+                }
+
+                if (LevelChecked(OriginalHook(AirAnchor)) &&
+                     !battery &&
+                     ((GetCooldownRemainingTime(OriginalHook(AirAnchor)) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(OriginalHook(AirAnchor))))
+                {
+                    actionID = OriginalHook(AirAnchor);
+                    return true;
+                }
+
+                if (LevelChecked(Drill) && !WasLastWeaponskill(Drill) &&
+                    ((GetCooldownRemainingTime(Drill) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Drill)))
+                {
+                    actionID = Drill;
+                    return true;
+                }
+                return false;
+            }
+
+            private static bool UseQueen(MCHGauge gauge)
+            {
+                if (CanWeave(OriginalHook(SplitShot)) && !gauge.IsOverheated && !HasEffect(Buffs.Wildfire) &&
+                    LevelChecked(OriginalHook(RookAutoturret)) && !gauge.IsRobotActive && gauge.Battery >= 50)
+                {
+                    int queensUsed = ActionWatching.CombatActions.Count(x => x == OriginalHook(RookAutoturret));
+
+                    if (queensUsed < 2)
+                        return true;
+
+                    if (queensUsed >= 2 && queensUsed % 2 == 0 && gauge.Battery == 100)
+                        return true;
+
+                    if (queensUsed >= 2 && queensUsed % 2 == 1 && gauge.Battery >= 80)
+                        return true;
+                }
+                return false;
+            }
+        }
+
+        internal class MCH_ST_AdvancedMode : CustomCombo
+        {
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_ST_AdvancedMode;
+            internal static MCHOpenerLogic MCHOpener = new();
+
+            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
+            {
+                MCHGauge? gauge = GetJobGauge<MCHGauge>();
+                bool interruptReady = ActionReady(All.HeadGraze) && CanInterruptEnemy() && CanDelayedWeave(actionID);
+                double heatblastRC = 1.5;
+                bool drillCD = !ActionReady(Drill) || (ActionReady(Drill) && GetCooldownRemainingTime(Drill) > heatblastRC * 6);
+                bool anchorCD = !ActionReady(OriginalHook(AirAnchor)) || (ActionReady(OriginalHook(AirAnchor)) && GetCooldownRemainingTime(OriginalHook(AirAnchor)) > heatblastRC * 6);
+                bool sawCD = !ActionReady(Chainsaw) || (ActionReady(Chainsaw) && GetCooldownRemainingTime(Chainsaw) > heatblastRC * 6);
+                float GCD = GetCooldown(OriginalHook(SplitShot)).CooldownTotal;
+
+                if (actionID is SplitShot or HeatedSplitShot)
+                {
+                    if (IsEnabled(CustomComboPreset.MCH_Variant_Cure) &&
+                    IsEnabled(Variant.VariantCure) && PlayerHealthPercentageHp() <= Config.MCH_VariantCure)
+                        return Variant.VariantCure;
+
+                    if (IsEnabled(CustomComboPreset.MCH_Variant_Rampart) &&
+                        IsEnabled(Variant.VariantRampart) &&
+                        IsOffCooldown(Variant.VariantRampart) &&
+                        CanWeave(actionID))
+                        return Variant.VariantRampart;
+
+                    // Opener for MCH
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Opener))
+                    {
+                        if (MCHOpener.DoFullOpener(ref actionID))
+                            return actionID;
+                    }
+
+                    // Interrupt
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Interrupt) && interruptReady)
+                        return All.HeadGraze;
+
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_QueenOverdrive) && gauge.IsRobotActive && GetTargetHPPercent() <= Config.MCH_ST_QueenOverDrive &&
+                        CanWeave(actionID) && ActionReady(OriginalHook(RookOverdrive)))
+                        return OriginalHook(RookOverdrive);
+
+                    // Wildfire
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_WildFire) &&
+                        CanWeave(actionID) && ActionReady(Wildfire) && WasLastAction(Hypercharge) &&
+                        GetTargetHPPercent() >= Config.MCH_ST_WildfireHP)
+                        return Wildfire;
+
+                    // BarrelStabilizer use and Full metal field
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Stabilizer) &&
+                        !gauge.IsOverheated && ((CanWeave(actionID) && ActionReady(BarrelStabilizer)) ||
+                        (IsEnabled(CustomComboPreset.MCH_ST_Adv_Stabilizer_FullMetalField) && HasEffect(Buffs.FullMetalMachinist) && WasLastWeaponskill(Excavator))))
+                        return OriginalHook(BarrelStabilizer);
+
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Hypercharge) &&
+                        CanWeave(actionID) && (gauge.Heat >= 50 || HasEffect(Buffs.Hypercharged)) &&
+                        LevelChecked(Hypercharge) && !gauge.IsOverheated && !WasLastAction(BarrelStabilizer))
+                    {
+                        //Protection & ensures Hyper charged is double weaved with WF during reopener
+                        if (WasLastAction(FullMetalField) ||
+                            (!LevelChecked(FullMetalField) && ActionReady(Wildfire)) ||
+                            !LevelChecked(Wildfire))
+                            return Hypercharge;
+
+                        if (drillCD && anchorCD && sawCD &&
+                            ((GetCooldownRemainingTime(Wildfire) > GCD * 5 && LevelChecked(Wildfire)) || !LevelChecked(Wildfire)))
+                            return Hypercharge;
+                    }
+
+                    //Queen
+                    if (UseQueen(gauge))
+                        return OriginalHook(RookAutoturret);
+
+                    //Heatblast, Gauss, Rico
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_GaussRicochet) &&
+                        CanWeave(actionID) && WasLastAction(OriginalHook(Heatblast)) &&
+                        (ActionWatching.GetAttackType(ActionWatching.LastAction) != ActionWatching.ActionAttackType.Ability))
+                    {
+                        if (ActionReady(OriginalHook(GaussRound)) && GetRemainingCharges(OriginalHook(GaussRound)) >= GetRemainingCharges(OriginalHook(Ricochet)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && GetRemainingCharges(OriginalHook(Ricochet)) > GetRemainingCharges(OriginalHook(GaussRound)))
+                            return OriginalHook(Ricochet);
+                    }
+
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Heatblast) &&
+                        gauge.IsOverheated && LevelChecked(OriginalHook(Heatblast)))
+                        return OriginalHook(Heatblast);
+
+                    //gauss and ricochet outside HC
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_GaussRicochet) &&
+                        CanWeave(actionID) && !gauge.IsOverheated &&
+                        (WasLastWeaponskill(OriginalHook(AirAnchor)) || WasLastWeaponskill(OriginalHook(Chainsaw)) || WasLastWeaponskill(Drill)))
+                    {
+                        if (ActionReady(OriginalHook(GaussRound)) && !WasLastAction(OriginalHook(GaussRound)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && !WasLastAction(OriginalHook(Ricochet)))
+                            return OriginalHook(Ricochet);
+                    }
+
+                    if (ReassembledTools(ref actionID, gauge))
+                        return actionID;
+
+                    // healing
+                    if (IsEnabled(CustomComboPreset.MCH_ST_Adv_SecondWind) &&
+                        CanWeave(actionID) && PlayerHealthPercentageHp() <= Config.MCH_ST_SecondWindThreshold && ActionReady(All.SecondWind))
+                        return All.SecondWind;
+
+                    //1-2-3 Combo
+                    if (comboTime > 0)
+                    {
+                        if (lastComboMove is SplitShot && LevelChecked(OriginalHook(SlugShot)))
+                            return OriginalHook(SlugShot);
+
+                        if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && Config.MCH_ST_Reassembled[4] && lastComboMove == OriginalHook(SlugShot) &&
+                            !LevelChecked(Drill) && !HasEffect(Buffs.Reassembled) && ActionReady(Reassemble))
+                            return Reassemble;
+
+                        if (lastComboMove is SlugShot && LevelChecked(OriginalHook(CleanShot)))
                             return OriginalHook(CleanShot);
                     }
                     return OriginalHook(SplitShot);
                 }
                 return actionID;
+            }
 
+            private static bool ReassembledTools(ref uint actionID, MCHGauge gauge)
+            {
+                bool battery = Svc.Gauges.Get<MCHGauge>().Battery == 100;
+                bool reassembledAnchor = (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && Config.MCH_ST_Reassembled[0] && (HasEffect(Buffs.Reassembled) || !HasEffect(Buffs.Reassembled))) || (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && !Config.MCH_ST_Reassembled[0] && !HasEffect(Buffs.Reassembled)) || (!HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) <= Config.MCH_ST_ReassemblePool) || (!IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble));
+                bool reassembledDrill = (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && Config.MCH_ST_Reassembled[1] && (HasEffect(Buffs.Reassembled) || !HasEffect(Buffs.Reassembled))) || (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && !Config.MCH_ST_Reassembled[1] && !HasEffect(Buffs.Reassembled)) || (!HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) <= Config.MCH_ST_ReassemblePool) || (!IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble));
+                bool reassembledChainsaw = (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && Config.MCH_ST_Reassembled[2] && (HasEffect(Buffs.Reassembled) || !HasEffect(Buffs.Reassembled))) || (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && !Config.MCH_ST_Reassembled[2] && !HasEffect(Buffs.Reassembled)) || (!HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) <= Config.MCH_ST_ReassemblePool) || (!IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble));
+                bool reassembledExcavator = (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && Config.MCH_ST_Reassembled[3] && (HasEffect(Buffs.Reassembled) || !HasEffect(Buffs.Reassembled))) || (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && !Config.MCH_ST_Reassembled[3] && !HasEffect(Buffs.Reassembled)) || (!HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) <= Config.MCH_ST_ReassemblePool) || (!IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble));
+
+                // TOOLS!! Chainsaw Drill Air Anchor Excavator
+                if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Reassemble) && !gauge.IsOverheated && !ActionWatching.WasLast2ActionsAbilities() &&
+                    !HasEffect(Buffs.Reassembled) && ActionReady(Reassemble) && (CanWeave(actionID) || !InCombat()) &&
+                    GetRemainingCharges(Reassemble) > Config.MCH_ST_ReassemblePool &&
+                    ((Config.MCH_ST_Reassembled[0] && LevelChecked(AirAnchor) && ((GetCooldownRemainingTime(AirAnchor) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(AirAnchor)) && !battery) ||
+                    (Config.MCH_ST_Reassembled[1] && LevelChecked(Drill) && ((GetCooldownRemainingTime(Drill) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Drill)) && (!LevelChecked(AirAnchor) || !Config.MCH_ST_Reassembled[0])) ||
+                    (Config.MCH_ST_Reassembled[2] && LevelChecked(Chainsaw) && ((GetCooldownRemainingTime(Chainsaw) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Chainsaw)) && (!LevelChecked(Excavator) || !Config.MCH_ST_Reassembled[3]) && !battery) ||
+                    (Config.MCH_ST_Reassembled[3] && LevelChecked(Excavator) && HasEffect(Buffs.ExcavatorReady) && !battery)))
+                {
+                    actionID = Reassemble;
+                    return true;
+                }
+
+                if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Excavator) &&
+                   reassembledExcavator &&
+                   LevelChecked(OriginalHook(Chainsaw)) &&
+                   !battery &&
+                   HasEffect(Buffs.ExcavatorReady))
+                {
+                    actionID = OriginalHook(Chainsaw);
+                    return true;
+                }
+
+                if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Chainsaw) &&
+                    reassembledChainsaw &&
+                    LevelChecked(Chainsaw) &&
+                    !battery &&
+                    ((GetCooldownRemainingTime(Chainsaw) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Chainsaw)))
+                {
+                    actionID = Chainsaw;
+                    return true;
+                }
+
+                if (IsEnabled(CustomComboPreset.MCH_ST_Adv_AirAnchor) &&
+                     reassembledAnchor &&
+                     LevelChecked(OriginalHook(AirAnchor)) &&
+                     !battery &&
+                     ((GetCooldownRemainingTime(OriginalHook(AirAnchor)) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(OriginalHook(AirAnchor))))
+                {
+                    actionID = OriginalHook(AirAnchor);
+                    return true;
+                }
+
+                if (IsEnabled(CustomComboPreset.MCH_ST_Adv_Drill) &&
+                    reassembledDrill &&
+                    LevelChecked(Drill) && !WasLastWeaponskill(Drill) &&
+                    ((GetCooldownRemainingTime(Drill) <= GetCooldownRemainingTime(OriginalHook(SplitShot)) + 0.25) || ActionReady(Drill)))
+                {
+                    actionID = Drill;
+                    return true;
+                }
+                return false;
+            }
+
+            private static bool UseQueen(MCHGauge gauge)
+            {
+                if (IsEnabled(CustomComboPreset.MCH_Adv_TurretQueen) && Config.MCH_ST_TurretUsage == 1 &&
+                    CanWeave(OriginalHook(SplitShot)) && !gauge.IsOverheated && !HasEffect(Buffs.Wildfire) &&
+                    LevelChecked(OriginalHook(RookAutoturret)) && !gauge.IsRobotActive && gauge.Battery >= 50)
+                {
+                    int queensUsed = ActionWatching.CombatActions.Count(x => x == OriginalHook(RookAutoturret));
+
+                    if (queensUsed < 2)
+                        return true;
+
+                    if (queensUsed >= 2 && queensUsed % 2 == 0 && gauge.Battery == 100)
+                        return true;
+
+                    if (queensUsed >= 2 && queensUsed % 2 == 1 && gauge.Battery >= 80)
+                        return true;
+                }
+
+                if (IsEnabled(CustomComboPreset.MCH_Adv_TurretQueen) && Config.MCH_ST_TurretUsage == 0 &&
+                    CanWeave(OriginalHook(SplitShot)) && LevelChecked(OriginalHook(RookAutoturret)) && gauge.Battery >= 50)
+                    return true;
+
+                return false;
+            }
+        }
+
+        internal class MCH_AoE_SimpleMode : CustomCombo
+        {
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_AoE_SimpleMode;
+
+            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
+            {
+                MCHGauge? gauge = GetJobGauge<MCHGauge>();
+
+                if (actionID is SpreadShot)
+                {
+                    if (IsEnabled(CustomComboPreset.MCH_Variant_Cure) &&
+                     IsEnabled(Variant.VariantCure) &&
+                     PlayerHealthPercentageHp() <= GetOptionValue(Config.MCH_VariantCure))
+                        return Variant.VariantCure;
+
+                    if (HasEffect(Buffs.Flamethrower) || JustUsed(Flamethrower))
+                        return OriginalHook(11);
+
+                    if (IsEnabled(CustomComboPreset.MCH_Variant_Rampart) &&
+                        IsEnabled(Variant.VariantRampart) &&
+                        IsOffCooldown(Variant.VariantRampart) &&
+                        CanWeave(actionID))
+                        return Variant.VariantRampart;
+
+                    // BarrelStabilizer use and Full metal field
+                    if (!gauge.IsOverheated && ((CanWeave(actionID) && ActionReady(BarrelStabilizer)) ||
+                        HasEffect(Buffs.FullMetalMachinist)))
+                        return OriginalHook(BarrelStabilizer);
+
+                    if (ActionReady(BioBlaster) && !TargetHasEffect(Debuffs.Bioblaster))
+                        return OriginalHook(BioBlaster);
+
+                    if (ActionReady(Flamethrower) && !IsMoving)
+                        return OriginalHook(Flamethrower);
+
+                    if (!gauge.IsOverheated && gauge.Battery == 100)
+                        return OriginalHook(RookAutoturret);
+
+                    // Hypercharge        
+                    if ((gauge.Heat >= 50 || HasEffect(Buffs.Hypercharged)) && LevelChecked(Hypercharge) && LevelChecked(AutoCrossbow) && !gauge.IsOverheated &&
+                        ((BioBlaster.LevelChecked() && GetCooldownRemainingTime(BioBlaster) > 10) || !BioBlaster.LevelChecked()) &&
+                        ((Flamethrower.LevelChecked() && GetCooldownRemainingTime(Flamethrower) > 10) || !Flamethrower.LevelChecked()))
+                        return Hypercharge;
+
+                    //AutoCrossbow, Gauss, Rico
+                    if (CanWeave(actionID) && WasLastAction(OriginalHook(AutoCrossbow)) &&
+                        (ActionWatching.GetAttackType(ActionWatching.LastAction) != ActionWatching.ActionAttackType.Ability))
+                    {
+                        if (ActionReady(OriginalHook(GaussRound)) && GetRemainingCharges(OriginalHook(GaussRound)) >= GetRemainingCharges(OriginalHook(Ricochet)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && GetRemainingCharges(OriginalHook(Ricochet)) > GetRemainingCharges(OriginalHook(GaussRound)))
+                            return OriginalHook(Ricochet);
+                    }
+
+                    if (gauge.IsOverheated && AutoCrossbow.LevelChecked())
+                        return OriginalHook(AutoCrossbow);
+
+                    if (!HasEffect(Buffs.Wildfire) &&
+                        !HasEffect(Buffs.Reassembled) && HasCharges(Reassemble) &&
+                        (Scattergun.LevelChecked() ||
+                        (gauge.IsOverheated && AutoCrossbow.LevelChecked()) ||
+                        (GetCooldownRemainingTime(Chainsaw) < 1 && Chainsaw.LevelChecked()) ||
+                        (GetCooldownRemainingTime(OriginalHook(Chainsaw)) < 1 && Excavator.LevelChecked())))
+                        return Reassemble;
+
+                    if (LevelChecked(Excavator) && HasEffect(Buffs.ExcavatorReady))
+                        return OriginalHook(Chainsaw);
+
+                    if ((LevelChecked(Chainsaw) && GetCooldownRemainingTime(Chainsaw) < 1) ||
+                        ActionReady(Chainsaw))
+                        return Chainsaw;
+
+                    if (LevelChecked(AutoCrossbow) && gauge.IsOverheated)
+                        return AutoCrossbow;
+                }
+                return actionID;
+            }
+        }
+
+        internal class MCH_AoE_AdvancedMode : CustomCombo
+        {
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_AoE_AdvancedMode;
+
+            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
+            {
+                if (actionID is SpreadShot or Scattergun)
+                {
+                    MCHGauge? gauge = GetJobGauge<MCHGauge>();
+                    bool reassembledScattergun = IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && Config.MCH_AoE_Reassembled[0] && HasEffect(Buffs.Reassembled);
+                    bool reassembledCrossbow = (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && Config.MCH_AoE_Reassembled[1] && HasEffect(Buffs.Reassembled)) || (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && !Config.MCH_AoE_Reassembled[1] && !HasEffect(Buffs.Reassembled)) || (!IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble));
+                    bool reassembledChainsaw = (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && Config.MCH_AoE_Reassembled[2] && HasEffect(Buffs.Reassembled)) || (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && !Config.MCH_AoE_Reassembled[2] && !HasEffect(Buffs.Reassembled)) || (!HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) <= Config.MCH_AoE_ReassemblePool) || (!IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble));
+                    bool reassembledExcavator = (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && Config.MCH_AoE_Reassembled[3] && HasEffect(Buffs.Reassembled)) || (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && !Config.MCH_AoE_Reassembled[3] && !HasEffect(Buffs.Reassembled)) || (!HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) <= Config.MCH_AoE_ReassemblePool) || (!IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble));
+
+                    if (IsEnabled(CustomComboPreset.MCH_Variant_Cure) &&
+                     IsEnabled(Variant.VariantCure) &&
+                     PlayerHealthPercentageHp() <= GetOptionValue(Config.MCH_VariantCure))
+                        return Variant.VariantCure;
+
+                    if (HasEffect(Buffs.Flamethrower) || JustUsed(Flamethrower))
+                        return OriginalHook(11);
+
+                    if (IsEnabled(CustomComboPreset.MCH_Variant_Rampart) &&
+                        IsEnabled(Variant.VariantRampart) &&
+                        IsOffCooldown(Variant.VariantRampart) &&
+                        CanWeave(actionID))
+                        return Variant.VariantRampart;
+
+                    // BarrelStabilizer use and Full metal field
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Stabilizer) &&
+                        !gauge.IsOverheated && ((CanWeave(actionID) && ActionReady(BarrelStabilizer)) ||
+                        (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Stabilizer_FullMetalField) && HasEffect(Buffs.FullMetalMachinist))))
+                        return OriginalHook(BarrelStabilizer);
+
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Bioblaster) &&
+                        ActionReady(BioBlaster) && !TargetHasEffect(Debuffs.Bioblaster))
+                        return OriginalHook(BioBlaster);
+
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_FlameThrower) &&
+                        ActionReady(Flamethrower) && !IsMoving)
+                        return OriginalHook(Flamethrower);
+
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Queen) && !gauge.IsOverheated)
+                    {
+                        if (gauge.Battery >= Config.MCH_AoE_TurretUsage)
+                            return OriginalHook(RookAutoturret);
+                    }
+
+                    // Hypercharge        
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Hypercharge) &&
+                        (gauge.Heat >= 50 || HasEffect(Buffs.Hypercharged)) && LevelChecked(Hypercharge) && LevelChecked(AutoCrossbow) && !gauge.IsOverheated &&
+                        ((BioBlaster.LevelChecked() && GetCooldownRemainingTime(BioBlaster) > 10) || !BioBlaster.LevelChecked() || IsNotEnabled(CustomComboPreset.MCH_AoE_Adv_Bioblaster)) &&
+                        ((Flamethrower.LevelChecked() && GetCooldownRemainingTime(Flamethrower) > 10) || !Flamethrower.LevelChecked() || IsNotEnabled(CustomComboPreset.MCH_AoE_Adv_FlameThrower)))
+                        return Hypercharge;
+
+                    //AutoCrossbow, Gauss, Rico
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_GaussRicochet) && !Config.MCH_AoE_Hypercharge &&
+                        CanWeave(actionID) && WasLastAction(OriginalHook(AutoCrossbow)) &&
+                        (ActionWatching.GetAttackType(ActionWatching.LastAction) != ActionWatching.ActionAttackType.Ability))
+                    {
+                        if (ActionReady(OriginalHook(GaussRound)) && GetRemainingCharges(OriginalHook(GaussRound)) >= GetRemainingCharges(OriginalHook(Ricochet)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && GetRemainingCharges(OriginalHook(Ricochet)) > GetRemainingCharges(OriginalHook(GaussRound)))
+                            return OriginalHook(Ricochet);
+                    }
+
+                    if (gauge.IsOverheated && AutoCrossbow.LevelChecked())
+                        return OriginalHook(AutoCrossbow);
+
+                    //gauss and ricochet outside HC
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_GaussRicochet) && Config.MCH_AoE_Hypercharge &&
+                        CanWeave(actionID) && !gauge.IsOverheated)
+                    {
+                        if (ActionReady(OriginalHook(GaussRound)) && !WasLastAction(OriginalHook(GaussRound)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && !WasLastAction(OriginalHook(Ricochet)))
+                            return OriginalHook(Ricochet);
+                    }
+
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Reassemble) && !HasEffect(Buffs.Wildfire) &&
+                        !HasEffect(Buffs.Reassembled) && HasCharges(Reassemble) &&
+                        GetRemainingCharges(Reassemble) > Config.MCH_AoE_ReassemblePool &&
+                        ((Config.MCH_AoE_Reassembled[0] && Scattergun.LevelChecked()) ||
+                        (gauge.IsOverheated && Config.MCH_AoE_Reassembled[1] && AutoCrossbow.LevelChecked()) ||
+                        (GetCooldownRemainingTime(Chainsaw) < 1 && Config.MCH_AoE_Reassembled[2] && Chainsaw.LevelChecked()) ||
+                        (GetCooldownRemainingTime(OriginalHook(Chainsaw)) < 1 && Config.MCH_AoE_Reassembled[3] && Excavator.LevelChecked())))
+                        return Reassemble;
+
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Excavator) &&
+                        reassembledExcavator &&
+                        LevelChecked(Excavator) && HasEffect(Buffs.ExcavatorReady))
+                        return OriginalHook(Chainsaw);
+
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_Chainsaw) &&
+                        reassembledChainsaw &&
+                        ((LevelChecked(Chainsaw) && GetCooldownRemainingTime(Chainsaw) < 1) ||
+                        ActionReady(Chainsaw)))
+                        return Chainsaw;
+
+                    if (reassembledScattergun)
+                        return OriginalHook(Scattergun);
+
+                    if (reassembledCrossbow &&
+                        LevelChecked(AutoCrossbow) && gauge.IsOverheated)
+                        return AutoCrossbow;
+
+                    if (IsEnabled(CustomComboPreset.MCH_AoE_Adv_SecondWind))
+                    {
+                        if (PlayerHealthPercentageHp() <= Config.MCH_AoE_SecondWindThreshold && ActionReady(All.SecondWind))
+                            return All.SecondWind;
+                    }
+                }
+                return actionID;
             }
         }
 
         internal class MCH_HeatblastGaussRicochet : CustomCombo
         {
-            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_HeatblastGaussRicochet;
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_Heatblast;
 
             protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
             {
-                if (actionID == HeatBlast)
-                {
-                    var heatBlastCD = GetCooldown(HeatBlast);
-                    var gaussCD = GetCooldown(GaussRound);
-                    var ricochetCD = GetCooldown(Ricochet);
+                MCHGauge? gauge = GetJobGauge<MCHGauge>();
 
-                    var gauge = GetJobGauge<MCHGauge>();
-                    var heat = GetJobGauge<MCHGauge>().Heat;
-                    if (IsEnabled(CustomComboPreset.MCH_ST_AutoBarrel)
-                        && level >= Levels.BarrelStabilizer
-                        && heat < 50
-                        && IsOffCooldown(BarrelStabilizer)
-                        && !gauge.IsOverheated)
+                if (actionID is Heatblast)
+                {
+                    if (IsEnabled(CustomComboPreset.MCH_Heatblast_AutoBarrel) &&
+                        ActionReady(BarrelStabilizer) && !gauge.IsOverheated)
                         return BarrelStabilizer;
 
-                    if (IsEnabled(CustomComboPreset.MCH_ST_Wildfire)
-                        && IsOffCooldown(Hypercharge)
-                        && IsOffCooldown(Wildfire)
-                        && level >= Levels.Wildfire
-                        && heat >= 50)
+                    if (IsEnabled(CustomComboPreset.MCH_Heatblast_Wildfire) &&
+                        ActionReady(Hypercharge) &&
+                        ActionReady(Wildfire) &&
+                        WasLastAction(Hypercharge))
                         return Wildfire;
 
-                    if (!gauge.IsOverheated && level >= Levels.Hypercharge)
+                    if (!gauge.IsOverheated && LevelChecked(Hypercharge) &&
+                        (gauge.Heat >= 50 || HasEffect(Buffs.Hypercharged)))
                         return Hypercharge;
 
-                    if (heatBlastCD.CooldownRemaining < 0.7 && level >= Levels.HeatBlast) // Prioritize Heat Blast
-                        return HeatBlast;
+                    //Heatblast, Gauss, Rico
+                    if (IsEnabled(CustomComboPreset.MCH_Heatblast_GaussRound) &&
+                        CanWeave(actionID) && WasLastAction(OriginalHook(Heatblast)) &&
+                        (ActionWatching.GetAttackType(ActionWatching.LastAction) != ActionWatching.ActionAttackType.Ability))
+                    {
+                        if (ActionReady(OriginalHook(GaussRound)) && GetRemainingCharges(OriginalHook(GaussRound)) >= GetRemainingCharges(OriginalHook(Ricochet)))
+                            return OriginalHook(GaussRound);
 
-                    if (level <= Levels.Ricochet)
-                        return GaussRound;
+                        if (ActionReady(OriginalHook(Ricochet)) && GetRemainingCharges(OriginalHook(Ricochet)) > GetRemainingCharges(OriginalHook(GaussRound)))
+                            return OriginalHook(Ricochet);
+                    }
 
-                    if (gaussCD.CooldownRemaining < ricochetCD.CooldownRemaining)
-                        return GaussRound;
-                    return Ricochet;
+                    if (gauge.IsOverheated && LevelChecked(OriginalHook(Heatblast)))
+                        return OriginalHook(Heatblast);
                 }
-
                 return actionID;
             }
         }
@@ -253,133 +729,16 @@ namespace XIVSlothCombo.Combos.PvE
 
             protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
             {
-                if (actionID == GaussRound || actionID == Ricochet)
+
+                if (actionID is GaussRound or Ricochet && CanWeave(actionID))
                 {
-                    var gaussCd = GetCooldown(GaussRound);
-                    var ricochetCd = GetCooldown(Ricochet);
-
-                    // Prioritize the original if both are off cooldown
-                    if (level <= Levels.Ricochet)
-                        return GaussRound;
-
-                    if (!gaussCd.IsCooldown && !ricochetCd.IsCooldown)
-                        return actionID;
-
-                    if (gaussCd.CooldownRemaining < ricochetCd.CooldownRemaining)
-                        return GaussRound;
-                    else
-                        return Ricochet;
-                }
-
-                return actionID;
-            }
-        }
-
-        internal class MCH_AoE_SimpleMode : CustomCombo
-        {
-            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_AoE_SimpleMode;
-
-            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
-            {
-                if (actionID == SpreadShot || actionID == Scattergun)
-                {
-                    var canWeave = CanWeave(actionID);
-                    var gauge = GetJobGauge<MCHGauge>();
-                    var battery = GetJobGauge<MCHGauge>().Battery;
-
-                    if (IsEnabled(CustomComboPreset.MCH_Variant_Cure) && IsEnabled(Variant.VariantCure) && PlayerHealthPercentageHp() <= GetOptionValue(Config.MCH_VariantCure))
-                        return Variant.VariantCure;
-
-                    if (IsEnabled(CustomComboPreset.MCH_Variant_Rampart) &&
-                        IsEnabled(Variant.VariantRampart) &&
-                        IsOffCooldown(Variant.VariantRampart) &&
-                        canWeave)
-                        return Variant.VariantRampart;
-
-                    if (IsEnabled(CustomComboPreset.MCH_AoE_OverCharge) && canWeave)
                     {
-                        if (battery == 100 && level >= Levels.QueenOverdrive)
-                            return AutomatonQueen;
-                        if (battery == 100 && level >= Levels.RookOverdrive)
-                            return RookAutoturret;
+                        if (ActionReady(OriginalHook(GaussRound)) && GetRemainingCharges(OriginalHook(GaussRound)) >= GetRemainingCharges(OriginalHook(Ricochet)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && GetRemainingCharges(OriginalHook(Ricochet)) > GetRemainingCharges(OriginalHook(GaussRound)))
+                            return OriginalHook(Ricochet);
                     }
-
-                    if (IsEnabled(CustomComboPreset.MCH_AoE_Simple_Assembling) && LevelChecked(Reassemble))
-                    {
-                        if (HasEffect(Buffs.Reassembled))
-                        {
-                            if (BioBlaster.LevelChecked())
-                            {
-                                if (LevelChecked(ChainSaw) && IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_ChainSaw) && IsOffCooldown(ChainSaw))
-                                    return ChainSaw;
-
-                                if (LevelChecked(BioBlaster) && IsEnabled(CustomComboPreset.MCH_AoE_Simple_Assembling_Bioblaster) && IsOffCooldown(BioBlaster))
-                                    return BioBlaster;
-                            }
-                            else
-                            {
-                                if (LevelChecked(AutoCrossbow) && gauge.IsOverheated)
-                                    return AutoCrossbow;
-
-                                return OriginalHook(SpreadShot);
-                            }
-                        }
-
-                        var reassmCharges = GetRemainingCharges(Reassemble);
-                        var bioMaxChargeCheck = IsEnabled(CustomComboPreset.MCH_AoE_Simple_Assembling_Bioblaster_MaxCharges) ? GetMaxCharges(Reassemble) : 1;
-                        var chainMaxChargeCheck = IsEnabled(CustomComboPreset.MCH_AoE_Simple_Assembling_ChainSaw_MaxCharges) ? GetMaxCharges(Reassemble) : 1;
-
-                        if (reassmCharges > 0)
-                        {
-                            if (BioBlaster.LevelChecked())
-                            {
-                                if (LevelChecked(BioBlaster) && IsEnabled(CustomComboPreset.MCH_AoE_Simple_Assembling_Bioblaster) && IsOffCooldown(BioBlaster) && reassmCharges >= bioMaxChargeCheck)
-                                    return Reassemble;
-
-                                if (LevelChecked(ChainSaw) && IsEnabled(CustomComboPreset.MCH_AoE_Simple_Assembling_ChainSaw) && IsOffCooldown(ChainSaw) && reassmCharges >= chainMaxChargeCheck)
-                                    return Reassemble;
-                            }
-                            else
-                            {
-                                return Reassemble;
-                            }
-                        }
-                    }
-
-                    if (IsEnabled(CustomComboPreset.MCH_AoE_GaussRicochet) && canWeave && (IsEnabled(CustomComboPreset.MCH_AoE_Gauss) || gauge.IsOverheated) && (HasCharges(Ricochet) || HasCharges(GaussRound)))
-                    {
-                        var gaussCharges = GetRemainingCharges(GaussRound);
-                        var ricochetCharges = GetRemainingCharges(Ricochet);
-
-                        if ((gaussCharges >= ricochetCharges || level < Levels.Ricochet) &&
-                            level >= Levels.GaussRound)
-                            return GaussRound;
-                        else if (ricochetCharges > 0 && level >= Levels.Ricochet)
-                            return Ricochet;
-
-                    }
-
-                    if (IsOffCooldown(ChainSaw) && ChainSaw.LevelChecked() && !gauge.IsOverheated && IsEnabled(CustomComboPreset.MCH_AoE_ChainSaw))
-                        return ChainSaw;
-
-                    if (IsOffCooldown(BioBlaster) && BioBlaster.LevelChecked() && !gauge.IsOverheated && IsEnabled(CustomComboPreset.MCH_AoE_Simple_Bioblaster))
-                        return BioBlaster;
-
-                    if (IsEnabled(CustomComboPreset.MCH_AoE_Simple_Hypercharge) && canWeave)
-                    {
-                        if (gauge.Heat >= 50 && level >= Levels.AutoCrossbow && !gauge.IsOverheated)
-                            return Hypercharge;
-                    }
-
-                    if (IsEnabled(CustomComboPreset.MCH_AoE_SecondWind) && CanWeave(actionID, 0.6))
-                    {
-                        if (PlayerHealthPercentageHp() <= PluginConfiguration.GetCustomIntValue(Config.MCH_AoE_SecondWindThreshold) && (LevelChecked(All.SecondWind) && IsOffCooldown(All.SecondWind)))
-                            return All.SecondWind;
-                    }
-
-                    if (gauge.IsOverheated && level >= Levels.AutoCrossbow)
-                        return AutoCrossbow;
-
                 }
 
                 return actionID;
@@ -389,319 +748,108 @@ namespace XIVSlothCombo.Combos.PvE
         internal class MCH_Overdrive : CustomCombo
         {
             protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_Overdrive;
+            MCHGauge? gauge = GetJobGauge<MCHGauge>();
 
             protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
             {
-                if (actionID == RookAutoturret || actionID == AutomatonQueen)
+                if (actionID is RookAutoturret or AutomatonQueen)
                 {
-                    var gauge = GetJobGauge<MCHGauge>();
                     if (gauge.IsRobotActive)
                         return OriginalHook(QueenOverdrive);
                 }
-
                 return actionID;
             }
+        }
 
-            internal class MCH_HotShotDrillChainSaw : CustomCombo
+        internal class MCH_HotShotDrillChainsawExcavator : CustomCombo
+        {
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_HotShotDrillChainsawExcavator;
+
+            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
             {
-                protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_HotShotDrillChainSaw;
-
-                protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
+                if (actionID is Drill || actionID is HotShot || actionID is AirAnchor || actionID is Chainsaw)
                 {
-                    if (actionID == Drill || actionID == HotShot || actionID == AirAnchor)
-                    {
-                        if (level >= Levels.ChainSaw)
-                            return CalcBestAction(actionID, ChainSaw, AirAnchor, Drill);
+                    if (LevelChecked(Excavator) && HasEffect(Buffs.ExcavatorReady))
+                        return CalcBestAction(actionID, Excavator, Chainsaw, AirAnchor, Drill);
 
-                        if (level >= Levels.AirAnchor)
-                            return CalcBestAction(actionID, AirAnchor, Drill);
+                    if (LevelChecked(Chainsaw))
+                        return CalcBestAction(actionID, Chainsaw, AirAnchor, Drill);
 
-                        if (level >= Levels.Drill)
-                            return CalcBestAction(actionID, Drill, HotShot);
+                    if (LevelChecked(AirAnchor))
+                        return CalcBestAction(actionID, AirAnchor, Drill);
 
-                        return HotShot;
-                    }
+                    if (LevelChecked(Drill))
+                        return CalcBestAction(actionID, Drill, HotShot);
 
-                    return actionID;
+                    return HotShot;
                 }
+                return actionID;
+            }
+        }
+
+        internal class MCH_DismantleTactician : CustomCombo
+        {
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_DismantleTactician;
+            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
+            {
+                if (actionID is Dismantle
+                    && (IsOnCooldown(Dismantle) || !LevelChecked(Dismantle))
+                    && ActionReady(Tactician)
+                    && !HasEffect(Buffs.Tactician))
+                    return Tactician;
+
+                return actionID;
             }
         }
 
         internal class MCH_AutoCrossbowGaussRicochet : CustomCombo
         {
-            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_AutoCrossbowGaussRicochet;
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_AutoCrossbow;
+
 
             protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
             {
-                if (actionID == AutoCrossbow)
+                MCHGauge? gauge = GetJobGauge<MCHGauge>();
+
+                if (actionID is AutoCrossbow)
                 {
-                    var heatBlastCD = GetCooldown(HeatBlast);
-                    var gaussCD = GetCooldown(GaussRound);
-                    var ricochetCD = GetCooldown(Ricochet);
-                    var heat = GetJobGauge<MCHGauge>().Heat;
-
-                    var gauge = GetJobGauge<MCHGauge>();
-                    if (IsEnabled(CustomComboPreset.MCH_ST_AutoBarrel)
-                        && level >= Levels.BarrelStabilizer
-                        && heat < 50
-                        && IsOffCooldown(BarrelStabilizer)
-                        && !gauge.IsOverheated
-                       ) return BarrelStabilizer;
-
-                    if (!gauge.IsOverheated && level >= Levels.Hypercharge)
-                        return Hypercharge;
-                    if (heatBlastCD.CooldownRemaining < 0.7 && level >= Levels.AutoCrossbow) // prioritize autocrossbow
-                        return AutoCrossbow;
-                    if (level <= Levels.Ricochet)
-                        return GaussRound;
-                    if (gaussCD.CooldownRemaining < ricochetCD.CooldownRemaining)
-                        return GaussRound;
-                    else
-                        return Ricochet;
-                }
-
-                return actionID;
-            }
-        }
-
-        internal class MCH_ST_SimpleMode : CustomCombo
-        {
-            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.MCH_ST_SimpleMode;
-            internal static bool openerFinished = false;
-
-            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
-            {
-                if (actionID is SplitShot or HeatedSplitShot)
-                {
-                    var inCombat = InCombat();
-                    var gauge = GetJobGauge<MCHGauge>();
-
-                    var wildfireCDTime = GetCooldownRemainingTime(Wildfire);
-
-                    if (!inCombat)
-                    {
-                        openerFinished = false;
-
-                    }
-
-                    if (IsEnabled(CustomComboPreset.MCH_Variant_Cure) && IsEnabled(Variant.VariantCure) && PlayerHealthPercentageHp() <= GetOptionValue(Config.MCH_VariantCure))
-                        return Variant.VariantCure;
-
-                    if (IsEnabled(CustomComboPreset.MCH_Variant_Rampart) &&
-                        IsEnabled(Variant.VariantRampart) &&
-                        IsOffCooldown(Variant.VariantRampart) &&
-                        CanWeave(actionID))
-                        return Variant.VariantRampart;
-
-                    if (CanWeave(actionID) && IsEnabled(CustomComboPreset.MCH_ST_Simple_Stabilizer) && gauge.Heat <= 55 &&
-                            IsOffCooldown(BarrelStabilizer) && level >= Levels.BarrelStabilizer && !WasLastWeaponskill(ChainSaw) &&
-                            (wildfireCDTime <= 9 || (wildfireCDTime >= 110 && !IsEnabled(CustomComboPreset.MCH_ST_Simple_Stabilizer_Wildfire_Only) && gauge.IsOverheated)))
+                    if (IsEnabled(CustomComboPreset.MCH_AutoCrossbow_AutoBarrel) &&
+                            ActionReady(BarrelStabilizer) && !gauge.IsOverheated)
                         return BarrelStabilizer;
 
-                    if (CanWeave(actionID) && IsEnabled(CustomComboPreset.MCH_ST_Simple_Interrupt) && CanInterruptEnemy() && IsOffCooldown(All.HeadGraze))
+                    if (!gauge.IsOverheated && LevelChecked(Hypercharge) && (gauge.Heat >= 50 || HasEffect(Buffs.Hypercharged)))
+                        return Hypercharge;
+
+                    //Heatblast, Gauss, Rico
+                    if (IsEnabled(CustomComboPreset.MCH_AutoCrossbow_GaussRound) && CanWeave(actionID) && WasLastAction(OriginalHook(AutoCrossbow)) &&
+                        (ActionWatching.GetAttackType(ActionWatching.LastAction) != ActionWatching.ActionAttackType.Ability))
                     {
-                        return All.HeadGraze;
+                        if (ActionReady(OriginalHook(GaussRound)) && GetRemainingCharges(OriginalHook(GaussRound)) >= GetRemainingCharges(OriginalHook(Ricochet)))
+                            return OriginalHook(GaussRound);
+
+                        if (ActionReady(OriginalHook(Ricochet)) && GetRemainingCharges(OriginalHook(Ricochet)) > GetRemainingCharges(OriginalHook(GaussRound)))
+                            return OriginalHook(Ricochet);
                     }
 
-                    if (openerFinished && (gauge.Heat >= 50 || WasLastAbility(Hypercharge)) && wildfireCDTime <= 2 && level >= Levels.Wildfire && IsEnabled(CustomComboPreset.MCH_ST_Simple_WildCharge) &&
-                        (WasLastWeaponskill(ChainSaw) || (!WasLastWeaponskill(Drill) && !WasLastWeaponskill(AirAnchor) && !WasLastWeaponskill(HeatBlast)))) //these try to ensure the correct loops
-                    {
-                        if (CanDelayedWeave(actionID) && !gauge.IsOverheated && !WasLastWeaponskill(ChainSaw))
-                        {
-                            return Wildfire;
-                        }
-                        else if (CanDelayedWeave(actionID, 1.1) && !gauge.IsOverheated && WasLastWeaponskill(ChainSaw))
-                        {
-                            return Wildfire;
-                        }
-                        else if (CanWeave(actionID, 0.6) && gauge.IsOverheated)
-                        {
-                            return Wildfire;
-                        }
-
-                    }
-
-                    if (CanWeave(actionID) && openerFinished && !gauge.IsRobotActive && IsEnabled(CustomComboPreset.MCH_ST_Simple_Gadget) && (wildfireCDTime >= 2 && !WasLastAbility(Wildfire) || level < Levels.Wildfire))
-                    {
-                        //overflow protection
-                        if (level >= Levels.RookOverdrive && gauge.Battery == 100 && CombatEngageDuration().Seconds < 55)
-                        {
-                            return OriginalHook(RookAutoturret);
-                        }
-                        else if (level >= Levels.RookOverdrive && gauge.Battery >= 50 && (CombatEngageDuration().Seconds >= 59 || CombatEngageDuration().Seconds <= 05 || (CombatEngageDuration().Minutes == 0 && !WasLastWeaponskill(OriginalHook(CleanShot)))))
-                        {
-                            return OriginalHook(RookAutoturret);
-                        }
-                        //else if (gauge.Battery >= 50 && level >= Levels.RookOverdrive && (CombatEngageDuration().Seconds >= 58 || CombatEngageDuration().Seconds <= 05))
-                        //{
-                        //    return OriginalHook(RookAutoturret);
-                        //}
-
-                    }
-
-
-                    if (gauge.IsOverheated && level >= Levels.HeatBlast)
-                    {
-                        if (IsEnabled(CustomComboPreset.MCH_ST_Simple_GaussRicochet) && CanWeave(actionID, 0.6) && (wildfireCDTime > 2 || level < Levels.Wildfire)) //gauss and ricochet weave
-                        {
-                            var gaussCharges = GetRemainingCharges(GaussRound);
-                            var gaussMaxCharges = GetMaxCharges(GaussRound);
-
-                            var overheatTime = gauge.OverheatTimeRemaining;
-                            var reasmCharges = GetRemainingCharges(Reassemble);
-
-                            //Makes sure Reassemble isnt double weaved after a Gauss/Richochet during Hypercharge
-                            if (overheatTime < 1.7 && !HasEffect(Buffs.Reassembled) && IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling) && (WasLastAbility(GaussRound) || WasLastAbility(Ricochet)) &&
-                                (
-                                    (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_ChainSaw) && reasmCharges >= 1 && GetCooldownRemainingTime(ChainSaw) <= 2)
-                                    ||
-                                    (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_AirAnchor) && reasmCharges >= 1 && GetCooldownRemainingTime(AirAnchor) <= 2)
-                                    ||
-                                    (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_Drill) && reasmCharges >= 1 && GetCooldownRemainingTime(Drill) <= 2)
-                                ))
-                                return Reassemble;
-                            else if ((!IsEnabled(CustomComboPreset.MCH_ST_Simple_High_Latency_Mode) && HasCharges(GaussRound) && (level < Levels.Ricochet || GetCooldownRemainingTime(GaussRound) < GetCooldownRemainingTime(Ricochet))) ||
-                                       (IsEnabled(CustomComboPreset.MCH_ST_Simple_High_Latency_Mode) && gaussCharges >= gaussMaxCharges - 1))
-                            {
-                                return GaussRound;
-                            }
-                            else if (level >= Levels.Ricochet && HasCharges(Ricochet) && !IsEnabled(CustomComboPreset.MCH_ST_Simple_High_Latency_Mode))
-                            {
-                                return Ricochet;
-                            }
-
-                        }
-
-                        return HeatBlast;
-                    }
-
-                    if (CanWeave(actionID) && gauge.Heat >= 50 && openerFinished && IsEnabled(CustomComboPreset.MCH_ST_Simple_WildCharge) && level >= Levels.Hypercharge && !gauge.IsOverheated)
-                    {
-                        //Protection & ensures Hyper charged is double weaved with WF during reopener
-                        if (HasEffect(Buffs.Wildfire) || level < Levels.Wildfire) return Hypercharge;
-
-                        if (level >= Levels.Drill && GetCooldownRemainingTime(Drill) >= 8)
-                        {
-                            if (level >= Levels.AirAnchor && GetCooldownRemainingTime(AirAnchor) >= 8)
-                            {
-                                if (level >= Levels.ChainSaw && GetCooldownRemainingTime(ChainSaw) >= 8)
-                                {
-                                    if (UseHypercharge(gauge, wildfireCDTime)) return Hypercharge;
-                                }
-                                else if (level < Levels.ChainSaw)
-                                {
-                                    if (UseHypercharge(gauge, wildfireCDTime)) return Hypercharge;
-                                }
-                            }
-                            else if (level < Levels.AirAnchor)
-                            {
-                                if (UseHypercharge(gauge, wildfireCDTime)) return Hypercharge;
-                            }
-                        }
-                        else if (level < Levels.Drill)
-                        {
-                            if (UseHypercharge(gauge, wildfireCDTime)) return Hypercharge;
-                        }
-                    }
-
-                    // healing - please move if not appropriate priority
-                    if (IsEnabled(CustomComboPreset.MCH_ST_SecondWind) && CanWeave(actionID, 0.6))
-                    {
-                        if (PlayerHealthPercentageHp() <= PluginConfiguration.GetCustomIntValue(Config.MCH_ST_SecondWindThreshold) && LevelChecked(All.SecondWind) && IsOffCooldown(All.SecondWind))
-                            return All.SecondWind;
-                    }
-
-                    if ((IsOffCooldown(AirAnchor) || GetCooldownRemainingTime(AirAnchor) < 1) && level >= Levels.AirAnchor)
-                    {
-                        if (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling) && !HasEffect(Buffs.Reassembled) && IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_AirAnchor) &&
-                            GetRemainingCharges(Reassemble) > 0)
-                        {
-                            if (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_AirAnchor_MaxCharges) && GetRemainingCharges(Reassemble) == GetMaxCharges(Reassemble)) return Reassemble;
-                            else if (!IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_AirAnchor_MaxCharges)) return Reassemble;
-
-                        }
-                        return AirAnchor;
-                    }
-                    else if ((IsOffCooldown(HotShot) || GetCooldownRemainingTime(HotShot) < 1) && level is >= Levels.Hotshot and < Levels.AirAnchor)
-                        return HotShot;
-
-                    if ((IsOffCooldown(Drill) || GetCooldownRemainingTime(Drill) < 1) && level >= Levels.Drill)
-                    {
-                        if (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling) && IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_Drill) &&
-                            !HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) > 0)
-                        {
-                            if (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_Drill_MaxCharges) && GetRemainingCharges(Reassemble) == GetMaxCharges(Reassemble)) return Reassemble;
-                            else if (!IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_Drill_MaxCharges)) return Reassemble;
-                        }
-                        return Drill;
-                    }
-
-                    if ((IsOffCooldown(ChainSaw) || GetCooldownRemainingTime(ChainSaw) < 1) && level >= Levels.ChainSaw && openerFinished)
-                    {
-                        if (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling) && IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_ChainSaw) && !HasEffect(Buffs.Reassembled) &&
-                            GetRemainingCharges(Reassemble) > 0)
-                        {
-                            if (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_ChainSaw_MaxCharges) && GetRemainingCharges(Reassemble) == GetMaxCharges(Reassemble)) return Reassemble;
-                            else if (!IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling_ChainSaw_MaxCharges)) return Reassemble;
-                        }
-                        return ChainSaw;
-                    }
-
-                    if (IsEnabled(CustomComboPreset.MCH_ST_Simple_GaussRicochet) && CanWeave(actionID))
-                    {
-                        if (HasCharges(GaussRound) && (level < Levels.Ricochet || GetCooldownRemainingTime(GaussRound) < GetCooldownRemainingTime(Ricochet)))
-                            return GaussRound;
-                        else if (HasCharges(Ricochet) && level >= Levels.Ricochet)
-                            return Ricochet;
-                    }
-
-
-                    if (lastComboMove == SplitShot && level >= Levels.SlugShot)
-                        return OriginalHook(SlugShot);
-
-                    if (lastComboMove == SlugShot && level >= Levels.CleanShot)
-                    {
-                        if (IsEnabled(CustomComboPreset.MCH_ST_Simple_Assembling) &&
-                            level < Levels.Drill && !HasEffect(Buffs.Reassembled) && GetRemainingCharges(Reassemble) > 0)
-                        {
-                            return Reassemble;
-                        }
-                        return OriginalHook(CleanShot);
-                    }
-
-                    if (lastComboMove == CleanShot) openerFinished = true;
+                    if (gauge.IsOverheated && LevelChecked(OriginalHook(AutoCrossbow)))
+                        return OriginalHook(AutoCrossbow);
                 }
-
                 return actionID;
-            }
-
-            private bool UseHypercharge(MCHGauge gauge, float wildfireCDTime)
-            {
-                uint wfTimer = 6; //default timer
-                if (LocalPlayer.Level < Levels.BarrelStabilizer) wfTimer = 12; // just a little space to breathe and not delay the WF too much while you don't have access to the Barrel Stabilizer
-
-                // i really do not remember why i put > 70 here for heat, and im afraid if i remove it itll break it lol
-                if (CombatEngageDuration().Minutes == 0 && (gauge.Heat > 70 || CombatEngageDuration().Seconds <= 30) && !WasLastWeaponskill(OriginalHook(CleanShot)))
-                {
-                    return true;
-                }
-
-                if (CombatEngageDuration().Minutes > 0 && (wildfireCDTime >= wfTimer || WasLastAbility(Wildfire) || (WasLastWeaponskill(ChainSaw) && (IsOffCooldown(Wildfire) || wildfireCDTime < 1))))
-                {
-                    if (CombatEngageDuration().Minutes % 2 == 1 && gauge.Heat >= 90)
-                    {
-                        return true;
-                    }
-
-                    if (CombatEngageDuration().Minutes % 2 == 0)
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
             }
         }
 
+        internal class All_PRanged_Dismantle : CustomCombo
+        {
+            protected internal override CustomComboPreset Preset { get; } = CustomComboPreset.All_PRanged_Dismantle;
+
+            protected override uint Invoke(uint actionID, uint lastComboMove, float comboTime, byte level)
+            {
+                if (actionID is Dismantle)
+                    if (TargetHasEffectAny(Debuffs.Dismantled) && IsOffCooldown(Dismantle))
+                        return OriginalHook(11);
+
+                return actionID;
+            }
+        }
     }
 }
