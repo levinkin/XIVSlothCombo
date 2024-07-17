@@ -285,6 +285,29 @@ namespace XIVSlothCombo.Combos.PvE
                             return actionID;
                     }
 
+                    if (IsEnabled(CustomComboPreset.RPR_ST_GibbetGallows) &&
+                        (HasEffect(Buffs.SoulReaver) || HasEffect(Buffs.Executioner)) &&
+                        !HasEffect(Buffs.Enshrouded) && LevelChecked(Gibbet))
+                    {
+                        if (HasEffect(Buffs.EnhancedGibbet) || PositionalChoice is 1)
+                        {
+                            if (IsEnabled(CustomComboPreset.RPR_ST_TrueNorthDynamic) &&
+                                trueNorthReady && !OnTargetsFlank())
+                                return All.TrueNorth;
+
+                            return OriginalHook(Gibbet);
+                        }
+
+                        if (HasEffect(Buffs.EnhancedGallows) || PositionalChoice is 0)
+                        {
+                            if (IsEnabled(CustomComboPreset.RPR_ST_TrueNorthDynamic) &&
+                                trueNorthReady && !OnTargetsRear())
+                                return All.TrueNorth;
+
+                            return OriginalHook(Gallows);
+                        }
+                    }
+
                     if (IsEnabled(CustomComboPreset.RPR_ST_RangedFiller) &&
                        !InMeleeRange() && LevelChecked(Harpe) && HasBattleTarget())
                     {
@@ -298,8 +321,7 @@ namespace XIVSlothCombo.Combos.PvE
                     }
 
                     if (IsEnabled(CustomComboPreset.RPR_ST_SoD) && LevelChecked(ShadowOfDeath) && !HasEffect(Buffs.SoulReaver) && enemyHP > Config.RPR_SoDThreshold &&
-                        ((LevelChecked(PlentifulHarvest) && HasEffect(Buffs.Enshrouded) && (GetCooldownRemainingTime(ArcaneCircle) <= GCD * 3 || GetCooldownRemainingTime(ArcaneCircle) <= GCD)) || // Double Enshroud windows
-                      (GetDebuffRemainingTime(Debuffs.DeathsDesign) <= sodRefreshRange))) // Other times
+                      (GetDebuffRemainingTime(Debuffs.DeathsDesign) <= sodRefreshRange)) // Other times
                         return ShadowOfDeath;
 
                     if (TargetHasEffect(Debuffs.DeathsDesign))
@@ -386,28 +408,6 @@ namespace XIVSlothCombo.Combos.PvE
                             return All.Bloodbath;
                     }
 
-                    if (IsEnabled(CustomComboPreset.RPR_ST_GibbetGallows) &&
-                        (HasEffect(Buffs.SoulReaver) || HasEffect(Buffs.Executioner)) &&
-                        !HasEffect(Buffs.Enshrouded) && LevelChecked(Gibbet))
-                    {
-                        if (HasEffect(Buffs.EnhancedGibbet) || PositionalChoice is 1)
-                        {
-                            if (IsEnabled(CustomComboPreset.RPR_ST_TrueNorthDynamic) &&
-                                trueNorthReady && !OnTargetsFlank())
-                                return All.TrueNorth;
-
-                            return OriginalHook(Gibbet);
-                        }
-
-                        if (HasEffect(Buffs.EnhancedGallows) || PositionalChoice is 0)
-                        {
-                            if (IsEnabled(CustomComboPreset.RPR_ST_TrueNorthDynamic) &&
-                                trueNorthReady && !OnTargetsRear())
-                                return All.TrueNorth;
-
-                            return OriginalHook(Gallows);
-                        }
-                    }
 
                     if (comboTime > 0)
                     {
